@@ -18,7 +18,9 @@ from src.ai_summarizer import AISummarizer
 from src.qq_bot import QQBot
 from src.config import Config
 from src.database import Database
+import ssl
 
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # 加载环境变量
 load_dotenv()
