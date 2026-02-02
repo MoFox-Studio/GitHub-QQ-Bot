@@ -83,7 +83,7 @@ class GitHubMonitor:
         url = f"{self.base_url}/repos/{repo}/commits/{commit_sha}"
         
         try:
-            async with session.get(url, headers=self.headers) as response:
+            async with session.get(url, headers=self.headers, ssl=False) as response:
                 if response.status == 200:
                     commit_data = await response.json()
                     return self._format_commit(commit_data)
