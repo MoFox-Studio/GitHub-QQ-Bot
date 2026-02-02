@@ -62,7 +62,7 @@ class Database:
             logger.error(f"获取最后检查时间失败: {e}")
             return None
     
-    def update_last_check_time(self, repo: str, check_time: datetime, last_commit_sha: str = None):
+    def update_last_check_time(self, repo: str, check_time: datetime, last_commit_sha: str | None = None):
         """更新仓库的最后检查时间和最新提交SHA"""
         try:
             # 确保时间是UTC并格式化为ISO字符串

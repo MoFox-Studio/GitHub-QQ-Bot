@@ -101,7 +101,7 @@ class GitHubMonitor:
         
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(url, headers=self.headers, params=params) as response:
+                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
                     if response.status == 200:
                         commits_data = await response.json()
                         
@@ -162,7 +162,7 @@ class GitHubMonitor:
             
         except KeyError as e:
             logger.warning(f"提交数据格式异常，缺少字段: {e}")
-            return None
+            return {}
         except Exception as e:
             logger.warning(f"格式化提交数据时出错: {e}")
-            return None 
+            return {} 

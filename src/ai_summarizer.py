@@ -49,13 +49,15 @@ class AISummarizer:
                 temperature=0.7,
                 max_tokens=800
             )
-            
-            summary = response.choices[0].message.content.strip()
+            summary = response.choices[0].message.content
+            if summary:
+                summary= summary.strip()
             
             # 添加仓库链接和时间信息
             header = f"📊 {repo} 代码更新总结\n" + "="*30 + "\n"
             footer = f"\n🔗 查看详情：https://github.com/{repo}/commits"
             
+            assert summary
             return header + summary + footer
             
         except Exception as e:
