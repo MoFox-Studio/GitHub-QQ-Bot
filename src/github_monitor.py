@@ -34,7 +34,7 @@ class GitHubMonitor:
         
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(url, headers=self.headers, params=params) as response:
+                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
                     if response.status == 200:
                         commits_data = await response.json()
                         logger.info(f"从GitHub API获取到 {len(commits_data)} 个提交")
