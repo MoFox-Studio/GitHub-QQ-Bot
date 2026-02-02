@@ -45,9 +45,21 @@ async def diagnose_repo(config_path: str, repo: str):
         print("  ❌ 无法获取提交，请检查GitHub token和仓库权限")
         return
     
+    # 查找对应的仓库配置
+    repo_configs = config.get_repo_configs()
+    repo_config = None
+    for rc in repo_configs:
+        if rc.repo == repo:
+            repo_config = rc
+            break
+    
+    branches = repo_config.branches if repo_config else ["*"]
+    branch_info = ", ".join(branches) if branches != ["*"] else "所有分支"
+    print(f"  🌱 配置的分支: {branch_info}")
+    
     # 3. 检查新提交检测
     print("\n🆕 检查新提交检测:")
-    new_commits = await github_monitor.get_new_commits(repo, last_check, last_sha)
+    new_commits = await github_monitor.get_new_commits(repo, last_check, last_sha, branches)
     if new_commits:
         print(f"  📝 发现 {len(new_commits)} 个新提交:")
         for commit in new_commits:

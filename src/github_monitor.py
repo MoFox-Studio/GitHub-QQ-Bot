@@ -4,7 +4,7 @@ GitHub监控模块 - 获取仓库提交信息
 
 import aiohttp
 from datetime import datetime, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from loguru import logger
 
 
@@ -20,24 +20,66 @@ class GitHubMonitor:
             "User-Agent": "GitHub-QQ-Bot/1.0"
         }
     
-    async def get_new_commits(self, repo: str, since: Optional[datetime] = None, last_commit_sha: Optional[str] = None) -> List[Dict]:
-        """获取指定时间之后的新提交"""
+    async def get_new_commits(self, repo: str, since: Optional[datetime] = None, last_commit_sha: Optional[str] = None, branches: Optional[List[str]] = None) -> List[Dict]:
+        """获取指定时间之后的新提交
+        
+        Args:
+            repo: 仓库名称 (owner/repo)
+            since: 起始时间
+            last_commit_sha: 上次处理的提交SHA
+            branches: 要监控的分支列表，None或["*"]表示所有分支
+        """
+        # 如果没有指定分支或指定了"*"，则获取所有分支
+        if not branches or "*" in branches:
+            branches = None  # GitHub API 默认返回所有分支
+        
+        all_commits = []
+        
+        # 如果指定了特定分支，分别获取每个分支的提交
+        if branches:
+            for branch in branches:
+                logger.info(f"获取 {repo} 分支 {branch} 的提交")
+                branch_commits = await self._get_branch_commits(repo, branch, since, last_commit_sha)
+                all_commits.extend(branch_commits)
+        else:
+            # 获取所有分支的提交（默认行为）
+            logger.info(f"获取 {repo} 所有分支的提交")
+            all_commits = await self._get_branch_commits(repo, None, since, last_commit_sha)
+        
+        # 去重（同一个提交可能在多个分支上）
+        seen_shas = set()
+        unique_commits = []
+        for commit in all_commits:
+            if commit["full_sha"] not in seen_shas:
+                seen_shas.add(commit["full_sha"])
+                unique_commits.append(commit)
+        
+        return unique_commits[::-1]  # 按时间顺序排序（最早的在前）
+    
+    async def _get_branch_commits(self, repo: str, branch: Optional[str], since: Optional[datetime], last_commit_sha: Optional[str]) -> List[Dict]:
+        """获取指定分支的提交"""
         url = f"{self.base_url}/repos/{repo}/commits"
-        params = {"per_page": 30}  # 增加获取数量以确保不遗漏
+        params: Dict[str, Any] = {"per_page": 30}  # 增加获取数量以确保不遗漏
+        
+        # 添加分支参数
+        if branch:
+            params["sha"] = branch
         
         if since:
             # 确保时间是UTC格式并添加Z后缀
             if since.tzinfo is None:
                 since = since.replace(tzinfo=timezone.utc)
             params["since"] = since.strftime('%Y-%m-%dT%H:%M:%SZ')
-            logger.info(f"获取 {repo} 自 {params['since']} 以来的提交")
+            branch_info = f"分支 {branch}" if branch else "所有分支"
+            logger.info(f"获取 {repo} {branch_info} 自 {params['since']} 以来的提交")
         
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
                     if response.status == 200:
                         commits_data = await response.json()
-                        logger.info(f"从GitHub API获取到 {len(commits_data)} 个提交")
+                        branch_info = f"分支 {branch}" if branch else "所有分支"
+                        logger.info(f"从GitHub API获取到 {len(commits_data)} 个提交 ({branch_info})")
                         
                         # 过滤掉已经处理过的提交
                         if last_commit_sha:
@@ -56,9 +98,10 @@ class GitHubMonitor:
                             if detailed_commit:
                                 detailed_commits.append(detailed_commit)
                         
-                        return detailed_commits[::-1]  # 按时间顺序排序（最早的在前）
+                        return detailed_commits
                     elif response.status == 404:
-                        logger.error(f"仓库不存在或无权限访问: {repo}")
+                        branch_info = f"或分支 {branch} 不存在" if branch else ""
+                        logger.error(f"仓库不存在或无权限访问: {repo}{branch_info}")
                         return []
                     elif response.status == 403:
                         error_msg = await response.text()
@@ -94,10 +137,19 @@ class GitHubMonitor:
             logger.warning(f"获取提交 {commit_sha[:7]} 详情时出错: {e}")
             return None
     
-    async def get_recent_commits(self, repo: str, limit: int = 5) -> List[Dict]:
-        """获取最近的提交（用于测试）"""
+    async def get_recent_commits(self, repo: str, limit: int = 5, branch: Optional[str] = None) -> List[Dict]:
+        """获取最近的提交（用于测试）
+        
+        Args:
+            repo: 仓库名称
+            limit: 获取数量
+            branch: 分支名称，None表示默认分支
+        """
         url = f"{self.base_url}/repos/{repo}/commits"
-        params = {"per_page": limit}
+        params: Dict[str, Any] = {"per_page": limit}
+        
+        if branch:
+            params["sha"] = branch
         
         async with aiohttp.ClientSession() as session:
             try:

@@ -51,16 +51,21 @@ def run(config):
         )
         qq_bot = QQBot(config_obj.qq_bot_url, config_obj.qq_group_id)
         
+        # 获取仓库配置
+        repo_configs = config_obj.get_repo_configs()
+        
         logger.info("🚀 启动GitHub QQ Bot监控服务...")
-        logger.info(f"监控仓库: {', '.join(config_obj.github_repos)}")
+        for repo_config in repo_configs:
+            branch_info = ", ".join(repo_config.branches) if repo_config.branches != ["*"] else "所有分支"
+            logger.info(f"监控仓库: {repo_config.repo} (分支: {branch_info})")
         logger.info(f"检查间隔: {config_obj.check_interval}秒")
         
         # 主循环
         while True:
             try:
                 # 检查每个仓库
-                for repo in config_obj.github_repos:
-                    asyncio.run(process_repo(repo, db, github_monitor, ai_summarizer, qq_bot))
+                for repo_config in repo_configs:
+                    asyncio.run(process_repo(repo_config, db, github_monitor, ai_summarizer, qq_bot))
                 
                 logger.info(f"💤 等待{config_obj.check_interval}秒后继续检查...")
                 time.sleep(config_obj.check_interval)
@@ -77,18 +82,22 @@ def run(config):
         click.echo(f"错误: {e}", err=True)
 
 
-async def process_repo(repo: str, db: Database, github_monitor: GitHubMonitor, 
+async def process_repo(repo_config, db: Database, github_monitor: GitHubMonitor, 
                       ai_summarizer: AISummarizer, qq_bot: QQBot):
     """处理单个仓库的提交检查"""
+    repo = repo_config.repo
+    branches = repo_config.branches
+    
     try:
-        logger.info(f"🔍 检查仓库 {repo} 的新提交...")
+        branch_info = ", ".join(branches) if branches != ["*"] else "所有分支"
+        logger.info(f"🔍 检查仓库 {repo} 的新提交 (分支: {branch_info})...")
         
         # 获取最后检查时间和SHA
         last_check = db.get_last_check_time(repo)
         last_commit_sha = db.get_last_commit_sha(repo)
         
-        # 获取新提交（使用SHA过滤避免重复）
-        commits = await github_monitor.get_new_commits(repo, last_check, last_commit_sha)
+        # 获取新提交（使用SHA过滤避免重复，传递分支配置）
+        commits = await github_monitor.get_new_commits(repo, last_check, last_commit_sha, branches)
         
         if not commits:
             logger.info(f"✅ {repo} 没有新提交")
@@ -147,14 +156,20 @@ def init_config(config):
     # 创建默认配置
     default_config = {
         "github_token": "",
-        "github_repos": ["owner/repo"],
+        "github_repos": [
+            {
+                "repo": "owner/repo",
+                "branch": "main"
+            }
+        ],
         "check_interval": 300,
         "openai_api_key": "",
         "openai_base_url": "https://api.openai.com/v1",
         "openai_model": "gpt-3.5-turbo",
         "qq_bot_url": "http://127.0.0.1:5700",
         "qq_group_id": "",
-        "database_path": "data.db"
+        "database_path": "data.db",
+        "_comment": "仓库配置说明: 可以是简单字符串(默认监控所有分支)，或对象格式指定branch(单个分支)/branches(多个分支)。使用'*'表示所有分支"
     }
     
     with open(config_path, 'w', encoding='utf-8') as f:

@@ -1,8 +1,19 @@
 {
   "github_token": "ghp_your_github_token_here",
   "github_repos": [
-    "owner/repo1",
-    "owner/repo2"
+    {
+      "repo": "owner/repo1",
+      "branch": "main"
+    },
+    {
+      "repo": "owner/repo2",
+      "branches": ["main", "dev"]
+    },
+    {
+      "repo": "owner/repo3",
+      "branch": "*"
+    },
+    "owner/repo4"
   ],
   "check_interval": 300,
   "openai_api_key": "sk-your_openai_api_key_here",
