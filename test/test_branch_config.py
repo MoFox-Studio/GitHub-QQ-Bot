@@ -2,10 +2,9 @@
 """
 测试分支配置功能
 """
-
-import json
-from pathlib import Path
-from src.config import Config, RepoConfig
+import sys
+sys.path.append("..")
+from src.config import Config
 
 def test_config_parsing():
     """测试配置解析"""
