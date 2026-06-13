@@ -52,7 +52,7 @@ python main.py init-config
   "github_repos": ["owner/repo1", "owner/repo2"],
   "release_monitors": {
     "owner/repo1": {
-      "asset_files": ["app-release.apk", "checksums.txt"],
+      "asset_files": ["app-release-.*\\.apk", "checksums\\.txt"],
       "include_prerelease": false
     }
   },
@@ -124,7 +124,7 @@ python main.py --version
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `asset_files` | 要从Release Assets下载并发送到QQ群的文件名列表 | `[]` |
+| `asset_files` | 要从Release Assets下载并发送到QQ群的文件名或正则表达式列表 | `[]` |
 | `include_prerelease` | 是否通知预发布版本 | `false` |
 
 示例：
@@ -133,12 +133,14 @@ python main.py --version
 {
   "release_monitors": {
     "owner/repo": {
-      "asset_files": ["app-release.apk", "checksums.txt"],
+      "asset_files": ["app-release-.*\\.apk", "checksums\\.txt"],
       "include_prerelease": false
     }
   }
 }
 ```
+
+`asset_files` 中的每一项会先按完整文件名精确匹配，找不到时再按正则表达式完整匹配文件名。匹配一段可变文字可以使用 `.*`，例如 `app-release-.*\.apk` 可以匹配 `app-release-v1.2.3.apk`；匹配版本号可以使用 `[0-9]+\.[0-9]+\.[0-9]+`，例如 `plugin-v[0-9]+\.[0-9]+\.[0-9]+\.zip` 可以匹配 `plugin-v1.2.3.zip`。因为配置文件是 JSON，正则里的反斜杠需要写成双反斜杠，例如正则 `\.apk` 在 JSON 中写作 `\\.apk`。
 
 Release通知目标QQ群固定使用全局 `qq_group_id`。程序会记录每个仓库最后成功发送的Release ID，只有Release Note和配置的资源文件都发送成功后才更新状态，避免漏发。
 

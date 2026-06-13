@@ -5,6 +5,7 @@ GitHub QQ Bot - 监控GitHub仓库提交并发送总结到QQ群
 
 import asyncio
 import json
+import re
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -198,22 +199,44 @@ async def send_release_assets(repo: str, release: dict, asset_files: list[str],
     if not asset_files:
         return True
 
-    assets = {asset["name"]: asset for asset in release.get("assets", [])}
-    for asset_file in asset_files:
-        asset = assets.get(asset_file)
-        if not asset:
-            logger.error(f"Release {release['tag_name']} 中找不到资源文件: {asset_file}")
+    assets = release.get("assets", [])
+    for asset_pattern in asset_files:
+        matched_assets = match_release_assets(assets, asset_pattern)
+        if not matched_assets:
+            logger.error(f"Release {release['tag_name']} 中找不到匹配资源文件: {asset_pattern}")
             return False
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            target_path = Path(temp_dir) / asset_file
-            downloaded = await github_monitor.download_release_asset(asset["download_url"], target_path)
-            if not downloaded:
-                return False
-            if not await qq_bot.send_group_file(str(target_path.resolve()), group_id=group_id, name=asset_file):
-                return False
+        for asset in matched_assets:
+            asset_name = asset["name"]
+            with tempfile.TemporaryDirectory() as temp_dir:
+                target_path = Path(temp_dir) / asset_name
+                downloaded = await github_monitor.download_release_asset(asset["download_url"], target_path)
+                if not downloaded:
+                    return False
+                if not await qq_bot.send_group_file(str(target_path.resolve()), group_id=group_id, name=asset_name):
+                    return False
 
     return True
+
+
+def match_release_assets(assets: list[dict], asset_pattern: str) -> list[dict]:
+    """按精确文件名或正则表达式匹配Release资源文件。"""
+
+    exact_matches = [asset for asset in assets if asset.get("name") == asset_pattern]
+    if exact_matches:
+        return exact_matches
+
+    try:
+        regex = re.compile(asset_pattern)
+    except re.error as e:
+        logger.error(f"Release资源匹配正则无效: {asset_pattern}, 错误: {e}")
+        return []
+
+    return [
+        asset
+        for asset in assets
+        if regex.fullmatch(asset.get("name", ""))
+    ]
 
 
 @cli.command()
@@ -244,11 +267,11 @@ def init_config(config):
         "database_path": "data.db",
         "release_monitors": {
             "owner/repo": {
-                "asset_files": ["example.zip"],
+                "asset_files": ["example-.*\\.zip"],
                 "include_prerelease": False
             }
         },
-        "_comment": "仓库配置说明: github_repos支持字符串或对象格式；release_monitors按owner/repo配置Release监视，asset_files填写要发送到全局QQ群的Release资源文件名"
+        "_comment": "仓库配置说明: github_repos支持字符串或对象格式；release_monitors按owner/repo配置Release监视，asset_files填写要发送到全局QQ群的Release资源文件名或正则表达式"
     }
     
     with open(config_path, 'w', encoding='utf-8') as f:

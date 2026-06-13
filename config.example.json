@@ -17,11 +17,11 @@
   ],
   "release_monitors": {
     "owner/repo1": {
-      "asset_files": ["app-release.apk", "checksums.txt"],
+      "asset_files": ["app-release-.*\\.apk", "checksums\\.txt"],
       "include_prerelease": false
     },
     "owner/repo2": {
-      "asset_files": ["plugin.zip"]
+      "asset_files": ["plugin-v[0-9]+\\.[0-9]+\\.[0-9]+\\.zip"]
     }
   },
   "check_interval": 300,
