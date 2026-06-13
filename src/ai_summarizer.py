@@ -80,12 +80,12 @@ class AISummarizer:
             # 添加文件变更信息
             if 'files' in commit and commit['files']:
                 files_info = []
-                for file in commit['files'][:5]:  # 最多显示5个文件
+                for file in commit['files'][:10]:  # 最多显示10个文件
                     files_info.append(f"  - {file['filename']} ({file['status']})")
                 commit_info += "变更文件:\n" + "\n".join(files_info)
                 
-                if len(commit['files']) > 5:
-                    commit_info += f"\n  ... 还有 {len(commit['files']) - 5} 个文件"
+                if len(commit['files']) > 10:
+                    commit_info += f"\n  ... 还有 {len(commit['files']) - 10} 个文件"
             
             formatted_commits.append(commit_info)
         

@@ -5,6 +5,7 @@
 ## 功能特性
 
 - 🔍 **智能监控**：定时检查指定GitHub仓库的新提交
+- 🚀 **Release通知**：监视指定仓库Release，发送Release Note和指定资源文件到QQ群
 - 🤖 **AI总结**：使用大模型（OpenAI/Claude等）智能总结提交内容
 - 📱 **QQ集成**：自动发送总结到指定QQ群
 - 💾 **状态管理**：SQLite数据库记录检查状态，避免重复通知
@@ -49,6 +50,12 @@ python main.py init-config
 {
   "github_token": "ghp_your_github_token",
   "github_repos": ["owner/repo1", "owner/repo2"],
+  "release_monitors": {
+    "owner/repo1": {
+      "asset_files": ["app-release.apk", "checksums.txt"],
+      "include_prerelease": false
+    }
+  },
   "check_interval": 300,
   "openai_api_key": "sk-your_openai_api_key",
   "openai_base_url": "https://api.openai.com/v1",
@@ -102,13 +109,38 @@ python main.py --version
 | 配置项 | 说明 | 示例 |
 |--------|------|------|
 | `github_token` | GitHub Personal Access Token | `ghp_xxxxx` |
-| `github_repos` | 要监控的仓库列表 | `["owner/repo1", "owner/repo2"]` |
+| `github_repos` | 要监控提交的仓库列表 | `["owner/repo1", "owner/repo2"]` |
+| `release_monitors` | Release监视字典，键为 `owner/repo`，值为监视配置 | `{ "owner/repo1": { "asset_files": ["app.zip"] } }` |
 | `check_interval` | 检查间隔（秒） | `300` (5分钟) |
 | `openai_api_key` | OpenAI API密钥 | `sk-xxxxx` |
 | `openai_base_url` | API基础URL | `https://api.openai.com/v1` |
 | `openai_model` | 使用的模型 | `gpt-3.5-turbo` |
 | `qq_bot_url` | QQ机器人API地址 | `http://127.0.0.1:5700` |
 | `qq_group_id` | 目标QQ群号 | `123456789` |
+
+### Release监视配置
+
+`release_monitors` 是一个按仓库名索引的字典；仓库出现在该字典中即表示启用Release监视。每个仓库支持以下字段：
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `asset_files` | 要从Release Assets下载并发送到QQ群的文件名列表 | `[]` |
+| `include_prerelease` | 是否通知预发布版本 | `false` |
+
+示例：
+
+```json
+{
+  "release_monitors": {
+    "owner/repo": {
+      "asset_files": ["app-release.apk", "checksums.txt"],
+      "include_prerelease": false
+    }
+  }
+}
+```
+
+Release通知目标QQ群固定使用全局 `qq_group_id`。程序会记录每个仓库最后成功发送的Release ID，只有Release Note和配置的资源文件都发送成功后才更新状态，避免漏发。
 
 ## API Token获取
 
@@ -206,4 +238,5 @@ MIT License
 - 初始版本
 - 基本监控功能
 - AI总结集成
-- QQ机器人支持 
+- QQ机器人支持
+- Release Note和Release资源文件QQ群通知支持 

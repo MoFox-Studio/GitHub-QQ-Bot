@@ -5,25 +5,22 @@ GitHub QQ Bot - 监控GitHub仓库提交并发送总结到QQ群
 
 import asyncio
 import json
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import click
 from loguru import logger
-from dotenv import load_dotenv
 
 from src.github_monitor import GitHubMonitor
 from src.ai_summarizer import AISummarizer
 from src.qq_bot import QQBot
-from src.config import Config
+from src.config import Config, ReleaseMonitorConfig
 from src.database import Database
 import ssl
 
 ssl._create_default_https_context = ssl._create_unverified_context
-
-# 加载环境变量
-load_dotenv()
 
 
 @click.group()
@@ -58,6 +55,9 @@ def run(config):
         for repo_config in repo_configs:
             branch_info = ", ".join(repo_config.branches) if repo_config.branches != ["*"] else "所有分支"
             logger.info(f"监控仓库: {repo_config.repo} (分支: {branch_info})")
+        release_monitor_configs = config_obj.get_release_monitor_configs()
+        for repo in release_monitor_configs:
+            logger.info(f"监控Release: {repo} (QQ群: {config_obj.qq_group_id})")
         logger.info(f"检查间隔: {config_obj.check_interval}秒")
         
         # 主循环
@@ -66,6 +66,9 @@ def run(config):
                 # 检查每个仓库
                 for repo_config in repo_configs:
                     asyncio.run(process_repo(repo_config, db, github_monitor, ai_summarizer, qq_bot))
+
+                for repo, monitor_config in release_monitor_configs.items():
+                    asyncio.run(process_release(repo, monitor_config, db, github_monitor, qq_bot, config_obj.qq_group_id))
                 
                 logger.info(f"💤 等待{config_obj.check_interval}秒后继续检查...")
                 time.sleep(config_obj.check_interval)
@@ -143,6 +146,76 @@ async def process_repo(repo_config, db: Database, github_monitor: GitHubMonitor,
         logger.error(f"❌ 处理仓库 {repo} 时出错: {e}", exc_info=True)
 
 
+async def process_release(repo: str, monitor_config: ReleaseMonitorConfig, db: Database,
+                          github_monitor: GitHubMonitor, qq_bot: QQBot, default_group_id: str) -> None:
+    """处理单个仓库的Release检查和QQ群通知。"""
+
+    try:
+        logger.info(f"🔍 检查仓库 {repo} 的新Release...")
+        release = await github_monitor.get_latest_release(repo, monitor_config.include_prerelease)
+        if not release:
+            logger.info(f"✅ {repo} 没有可通知的Release")
+            return
+
+        release_id = str(release["id"])
+        if db.get_last_release_id(repo) == release_id:
+            logger.info(f"✅ {repo} Release {release['tag_name']} 已通知过")
+            return
+
+        group_id = default_group_id
+        message = format_release_message(repo, release)
+        success = await qq_bot.send_message(message, group_id=group_id)
+        if not success:
+            logger.error("❌ Release消息发送失败，不更新Release状态")
+            return
+
+        files_success = await send_release_assets(repo, release, monitor_config.asset_files, github_monitor, qq_bot, group_id)
+        if files_success:
+            db.update_last_release(repo, release_id, release["tag_name"])
+        else:
+            logger.error("❌ Release文件发送失败，不更新Release状态")
+    except Exception as e:
+        logger.error(f"❌ 处理仓库 {repo} Release时出错: {e}", exc_info=True)
+
+
+def format_release_message(repo: str, release: dict) -> str:
+    """格式化Release通知消息。"""
+
+    note = release.get("body") or "无Release Note"
+    return (
+        f"🚀 仓库 {repo} 发布了新Release\n"
+        f"📌 版本: {release.get('tag_name', '')}\n"
+        f"📝 标题: {release.get('name', '')}\n"
+        f"🔗 链接: {release.get('url', '')}\n\n"
+        f"Release Note:\n{note}"
+    )
+
+
+async def send_release_assets(repo: str, release: dict, asset_files: list[str],
+                              github_monitor: GitHubMonitor, qq_bot: QQBot, group_id: str) -> bool:
+    """下载并发送配置中指定的Release资源文件。"""
+
+    if not asset_files:
+        return True
+
+    assets = {asset["name"]: asset for asset in release.get("assets", [])}
+    for asset_file in asset_files:
+        asset = assets.get(asset_file)
+        if not asset:
+            logger.error(f"Release {release['tag_name']} 中找不到资源文件: {asset_file}")
+            return False
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target_path = Path(temp_dir) / asset_file
+            downloaded = await github_monitor.download_release_asset(asset["download_url"], target_path)
+            if not downloaded:
+                return False
+            if not await qq_bot.send_group_file(str(target_path.resolve()), group_id=group_id, name=asset_file):
+                return False
+
+    return True
+
+
 @cli.command()
 @click.option('--config', '-c', default='config.json', help='配置文件路径')
 def init_config(config):
@@ -169,7 +242,13 @@ def init_config(config):
         "qq_bot_url": "http://127.0.0.1:5700",
         "qq_group_id": "",
         "database_path": "data.db",
-        "_comment": "仓库配置说明: 可以是简单字符串(默认监控所有分支)，或对象格式指定branch(单个分支)/branches(多个分支)。使用'*'表示所有分支"
+        "release_monitors": {
+            "owner/repo": {
+                "asset_files": ["example.zip"],
+                "include_prerelease": False
+            }
+        },
+        "_comment": "仓库配置说明: github_repos支持字符串或对象格式；release_monitors按owner/repo配置Release监视，asset_files填写要发送到全局QQ群的Release资源文件名"
     }
     
     with open(config_path, 'w', encoding='utf-8') as f:

@@ -23,14 +23,14 @@ class QQBot:
         if token:
             self.headers["Authorization"] = f"Bearer {token}"
     
-    async def send_message(self, message: str) -> bool:
-        """发送消息到QQ群"""
+    async def send_message(self, message: str, group_id: Optional[str] = None) -> bool:
+        """发送消息到QQ群。"""
         try:
             # go-cqhttp API格式
             url = f"{self.bot_url}/send_group_msg"
             
             payload = {
-                "group_id": int(self.group_id),
+                "group_id": int(group_id or self.group_id),
                 "message": message
             }
             
@@ -54,6 +54,36 @@ class QQBot:
             logger.error(f"发送QQ消息时出错: {e}")
             return False
     
+
+    async def send_group_file(self, file_path: str, group_id: Optional[str] = None, name: Optional[str] = None) -> bool:
+        """发送本地文件到QQ群。"""
+
+        try:
+            url = f"{self.bot_url}/upload_group_file"
+            payload = {
+                "group_id": int(group_id or self.group_id),
+                "file": file_path,
+                "name": name,
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=self.headers, json=payload) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get("status") == "ok":
+                            logger.info(f"✅ 文件发送成功: {name or file_path}")
+                            return True
+                        logger.error(f"QQ机器人返回错误: {result}")
+                        return False
+
+                    logger.error(f"发送文件失败，HTTP状态码: {response.status}")
+                    response_text = await response.text()
+                    logger.error(f"响应内容: {response_text}")
+                    return False
+        except Exception as e:
+            logger.error(f"发送QQ群文件时出错: {e}")
+            return False
+
     async def send_private_message(self, user_id: str, message: str) -> bool:
         """发送私聊消息"""
         try:

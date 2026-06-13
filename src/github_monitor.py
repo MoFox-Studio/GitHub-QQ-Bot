@@ -137,6 +137,98 @@ class GitHubMonitor:
             logger.warning(f"获取提交 {commit_sha[:7]} 详情时出错: {e}")
             return None
     
+
+    async def get_latest_release(self, repo: str, include_prerelease: bool = False) -> Optional[Dict]:
+        """获取仓库最新Release信息。
+
+        Args:
+            repo: 仓库名称 (owner/repo)
+            include_prerelease: 是否允许预发布版本
+        """
+
+        url = f"{self.base_url}/repos/{repo}/releases"
+        params: Dict[str, Any] = {"per_page": 10}
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
+                    if response.status == 200:
+                        releases_data = await response.json()
+                        for release_data in releases_data:
+                            if release_data.get("draft"):
+                                continue
+                            if release_data.get("prerelease") and not include_prerelease:
+                                continue
+                            return self._format_release(release_data)
+
+                        logger.info(f"仓库 {repo} 没有可通知的Release")
+                        return None
+                    if response.status == 404:
+                        logger.error(f"仓库不存在、无权限访问或没有Release: {repo}")
+                        return None
+
+                    error_msg = await response.text()
+                    logger.error(f"获取Release失败: {response.status}, 响应: {error_msg}")
+                    return None
+            except aiohttp.ClientError as e:
+                logger.error(f"网络请求GitHub Release API时出错: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"请求GitHub Release API时出错: {e}")
+                return None
+
+    def _format_release(self, release_data: Dict) -> Dict:
+        """格式化单个Release数据。"""
+
+        published_at = release_data.get("published_at")
+        parsed_date = None
+        if published_at:
+            parsed_date = datetime.fromisoformat(published_at.replace('Z', '+00:00')).isoformat()
+
+        return {
+            "id": release_data["id"],
+            "tag_name": release_data.get("tag_name", ""),
+            "name": release_data.get("name") or release_data.get("tag_name", ""),
+            "body": release_data.get("body") or "",
+            "url": release_data.get("html_url", ""),
+            "published_at": parsed_date,
+            "prerelease": release_data.get("prerelease", False),
+            "assets": [
+                {
+                    "name": asset.get("name", ""),
+                    "download_url": asset.get("browser_download_url", ""),
+                    "size": asset.get("size", 0),
+                }
+                for asset in release_data.get("assets", [])
+            ],
+        }
+
+
+    async def download_release_asset(self, download_url: str, target_path: Any) -> bool:
+        """下载Release资源文件到本地路径。
+
+        Args:
+            download_url: Release资源下载链接
+            target_path: 本地保存路径
+        """
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(download_url, headers=self.headers, ssl=False) as response:
+                    if response.status != 200:
+                        error_msg = await response.text()
+                        logger.error(f"下载Release资源失败: {response.status}, 响应: {error_msg}")
+                        return False
+
+                    with open(target_path, "wb") as file:
+                        async for chunk in response.content.iter_chunked(1024 * 1024):
+                            file.write(chunk)
+                    logger.info(f"Release资源下载完成: {target_path}")
+                    return True
+        except Exception as e:
+            logger.error(f"下载Release资源时出错: {e}")
+            return False
+
     async def get_recent_commits(self, repo: str, limit: int = 5, branch: Optional[str] = None) -> List[Dict]:
         """获取最近的提交（用于测试）
         

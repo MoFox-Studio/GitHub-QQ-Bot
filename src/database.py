@@ -32,6 +32,15 @@ class Database:
                         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS release_checks (
+                        repo TEXT PRIMARY KEY,
+                        last_release_id TEXT,
+                        last_release_tag TEXT,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
                 conn.commit()
                 logger.info(f"数据库初始化完成: {self.db_path}")
         except Exception as e:
@@ -126,3 +135,39 @@ class Database:
         except Exception as e:
             logger.error(f"获取仓库状态失败: {e}")
             return {"repo": repo, "error": str(e)} 
+
+    def get_last_release_id(self, repo: str) -> Optional[str]:
+        """获取最后已通知的Release ID。"""
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT last_release_id FROM release_checks WHERE repo = ?",
+                    (repo,)
+                )
+                result = cursor.fetchone()
+                release_id = result[0] if result and result[0] else None
+                logger.info(f"获取到仓库 {repo} 的最后Release ID: {release_id}")
+                return release_id
+        except Exception as e:
+            logger.error(f"获取最后Release ID失败: {e}")
+            return None
+
+    def update_last_release(self, repo: str, release_id: str, release_tag: str) -> None:
+        """更新仓库最后已通知的Release状态。"""
+
+        try:
+            current_time = datetime.now(timezone.utc).isoformat()
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO release_checks
+                    (repo, last_release_id, last_release_tag, created_at, updated_at)
+                    VALUES (?, ?, ?,
+                        COALESCE((SELECT created_at FROM release_checks WHERE repo = ?), ?),
+                        ?
+                    )
+                """, (repo, release_id, release_tag, repo, current_time, current_time))
+                conn.commit()
+                logger.info(f"更新仓库 {repo} Release状态 - ID: {release_id}, Tag: {release_tag}")
+        except Exception as e:
+            logger.error(f"更新最后Release状态失败: {e}")

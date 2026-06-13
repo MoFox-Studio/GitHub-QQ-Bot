@@ -5,20 +5,29 @@
 import json
 from pathlib import Path
 from typing import List, Union, Dict, Any
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field, validator
 
 
 class RepoConfig(BaseModel):
     """仓库配置类"""
+
     repo: str
-    branches: List[str] = ["*"]  # 默认监控所有分支
-    
+    branches: List[str] = Field(default_factory=lambda: ["*"])  # 默认监控所有分支
+
     @validator('repo')
-    def validate_repo(cls, v):
-        """验证仓库格式"""
+    def validate_repo(cls, v: str) -> str:
+        """验证仓库格式。"""
+
         if '/' not in v:
             raise ValueError(f"仓库格式错误: {v}，应为 owner/repo 格式")
         return v
+
+
+class ReleaseMonitorConfig(BaseModel):
+    """Release监视配置类。"""
+
+    asset_files: List[str] = Field(default_factory=list)
+    include_prerelease: bool = False
 
 
 class Config(BaseModel):
@@ -26,6 +35,7 @@ class Config(BaseModel):
     
     github_token: str
     github_repos: List[Union[str, Dict[str, Any]]]  # 支持字符串或字典格式
+    release_monitors: Dict[str, ReleaseMonitorConfig] = Field(default_factory=dict)
     check_interval: int = 300  # 默认5分钟
     
     openai_api_key: str
@@ -38,7 +48,7 @@ class Config(BaseModel):
     database_path: str = "data.db"
     
     def get_repo_configs(self) -> List[RepoConfig]:
-        """获取规范化的仓库配置列表"""
+        """获取规范化的仓库配置列表。"""
         configs = []
         for item in self.github_repos:
             if isinstance(item, str):
@@ -61,9 +71,14 @@ class Config(BaseModel):
             else:
                 raise ValueError(f"不支持的仓库配置格式: {item}")
         return configs
+
+    def get_release_monitor_configs(self) -> Dict[str, ReleaseMonitorConfig]:
+        """获取启用状态的Release监视配置字典。"""
+
+        return dict(self.release_monitors)
     
     @validator('github_repos')
-    def validate_repos(cls, v):
+    def validate_repos(cls, v: List[Union[str, Dict[str, Any]]]) -> List[Union[str, Dict[str, Any]]]:
         """验证仓库格式"""
         if not v:
             raise ValueError("github_repos 不能为空")
@@ -82,8 +97,17 @@ class Config(BaseModel):
                 raise ValueError(f"不支持的仓库配置格式: {item}")
         return v
     
+    @validator('release_monitors')
+    def validate_release_monitors(cls, v: Dict[str, ReleaseMonitorConfig]) -> Dict[str, ReleaseMonitorConfig]:
+        """验证Release监视仓库格式。"""
+
+        for repo in v:
+            if '/' not in repo:
+                raise ValueError(f"Release监视仓库格式错误: {repo}，应为 owner/repo 格式")
+        return v
+
     @validator('check_interval')
-    def validate_interval(cls, v):
+    def validate_interval(cls, v: int) -> int:
         """验证检查间隔"""
         if v < 60:
             raise ValueError("检查间隔不能少于60秒")

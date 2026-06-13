@@ -15,6 +15,15 @@
     },
     "owner/repo4"
   ],
+  "release_monitors": {
+    "owner/repo1": {
+      "asset_files": ["app-release.apk", "checksums.txt"],
+      "include_prerelease": false
+    },
+    "owner/repo2": {
+      "asset_files": ["plugin.zip"]
+    }
+  },
   "check_interval": 300,
   "openai_api_key": "sk-your_openai_api_key_here",
   "openai_base_url": "https://api.openai.com/v1",
@@ -22,4 +31,4 @@
   "qq_bot_url": "http://127.0.0.1:5700",
   "qq_group_id": "123456789",
   "database_path": "data.db"
-} 
+}
