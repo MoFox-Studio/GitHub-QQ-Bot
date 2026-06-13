@@ -164,7 +164,15 @@ async def process_release(repo: str, monitor_config: ReleaseMonitorConfig, db: D
             return
 
         group_id = default_group_id
-        files_success = await send_release_assets(repo, release, monitor_config.asset_files, github_monitor, qq_bot, group_id)
+        files_success = await send_release_assets(
+            repo,
+            release,
+            monitor_config.asset_files,
+            github_monitor,
+            qq_bot,
+            group_id,
+            monitor_config.group_file_folder_name,
+        )
         if not files_success:
             logger.error("❌ Release文件发送失败，不更新Release状态")
             return
@@ -193,8 +201,15 @@ def format_release_message(repo: str, release: dict) -> str:
     )
 
 
-async def send_release_assets(repo: str, release: dict, asset_files: list[str],
-                              github_monitor: GitHubMonitor, qq_bot: QQBot, group_id: str) -> bool:
+async def send_release_assets(
+    repo: str,
+    release: dict,
+    asset_files: list[str],
+    github_monitor: GitHubMonitor,
+    qq_bot: QQBot,
+    group_id: str,
+    group_file_folder_name: str | None = None,
+) -> bool:
     """下载并发送配置中指定的Release资源文件。"""
 
     if not asset_files:
@@ -215,7 +230,12 @@ async def send_release_assets(repo: str, release: dict, asset_files: list[str],
                 downloaded = await github_monitor.download_release_asset(asset["download_url"], target_path)
                 if not downloaded:
                     return False
-                if not await qq_bot.send_group_file(str(target_path.resolve()), group_id=group_id, name=asset_name):
+                if not await qq_bot.send_group_file(
+                    str(target_path.resolve()),
+                    group_id=group_id,
+                    name=asset_name,
+                    folder_name=group_file_folder_name,
+                ):
                     return False
 
     return True
@@ -270,10 +290,11 @@ def init_config(config):
         "release_monitors": {
             "owner/repo": {
                 "asset_files": ["example-.*\\.zip"],
-                "include_prerelease": False
+                "include_prerelease": False,
+                "group_file_folder_name": "Release"
             }
         },
-        "_comment": "仓库配置说明: github_repos支持字符串或对象格式；release_monitors按owner/repo配置Release监视，asset_files填写要发送到全局QQ群的Release资源文件名或正则表达式"
+        "_comment": "仓库配置说明: github_repos支持字符串或对象格式；release_monitors按owner/repo配置Release监视，asset_files填写要发送到全局QQ群的Release资源文件名或正则表达式，group_file_folder_name填写QQ群文件夹名称，留空则上传到群文件根目录"
     }
     
     with open(config_path, 'w', encoding='utf-8') as f:

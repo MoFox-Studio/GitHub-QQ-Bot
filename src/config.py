@@ -4,7 +4,7 @@
 
 import json
 from pathlib import Path
-from typing import List, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any
 from pydantic import BaseModel, Field, validator
 
 
@@ -28,6 +28,7 @@ class ReleaseMonitorConfig(BaseModel):
 
     asset_files: List[str] = Field(default_factory=list)
     include_prerelease: bool = False
+    group_file_folder_name: Optional[str] = None
 
 
 class Config(BaseModel):
