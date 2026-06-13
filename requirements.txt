@@ -1,8 +1,9 @@
-requests==2.31.0
-schedule==1.2.0
-openai==1.3.5
-python-dotenv==1.0.0
-loguru==0.7.2
-click==8.1.7
-pydantic==2.5.0
-aiohttp==3.9.1 
+requests
+schedule
+openai
+httpx
+python-dotenv
+loguru
+click
+pydantic
+aiohttp

@@ -164,17 +164,18 @@ async def process_release(repo: str, monitor_config: ReleaseMonitorConfig, db: D
             return
 
         group_id = default_group_id
+        files_success = await send_release_assets(repo, release, monitor_config.asset_files, github_monitor, qq_bot, group_id)
+        if not files_success:
+            logger.error("❌ Release文件发送失败，不更新Release状态")
+            return
+
         message = format_release_message(repo, release)
         success = await qq_bot.send_message(message, group_id=group_id)
         if not success:
             logger.error("❌ Release消息发送失败，不更新Release状态")
             return
 
-        files_success = await send_release_assets(repo, release, monitor_config.asset_files, github_monitor, qq_bot, group_id)
-        if files_success:
-            db.update_last_release(repo, release_id, release["tag_name"])
-        else:
-            logger.error("❌ Release文件发送失败，不更新Release状态")
+        db.update_last_release(repo, release_id, release["tag_name"])
     except Exception as e:
         logger.error(f"❌ 处理仓库 {repo} Release时出错: {e}", exc_info=True)
 
@@ -209,6 +210,7 @@ async def send_release_assets(repo: str, release: dict, asset_files: list[str],
         for asset in matched_assets:
             asset_name = asset["name"]
             with tempfile.TemporaryDirectory() as temp_dir:
+                logger.info(f"📥 下载Release资源文件: {asset_name}...")
                 target_path = Path(temp_dir) / asset_name
                 downloaded = await github_monitor.download_release_asset(asset["download_url"], target_path)
                 if not downloaded:

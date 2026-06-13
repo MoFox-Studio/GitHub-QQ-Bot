@@ -222,6 +222,7 @@ class GitHubMonitor:
 
                     with open(target_path, "wb") as file:
                         async for chunk in response.content.iter_chunked(1024 * 1024):
+                            logger.info(f"正在下载Release资源: {target_path}，已下载 {file.tell() / (1024 * 1024):.2f} MB")
                             file.write(chunk)
                     logger.info(f"Release资源下载完成: {target_path}")
                     return True
