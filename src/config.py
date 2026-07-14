@@ -63,6 +63,10 @@ class Config(BaseModel):
     qq_group_id: str
     
     database_path: str = "data.db"
+
+    # 代理配置，支持 http/https/socks5 代理用于加速GitHub下载
+    # 示例: "http://127.0.0.1:7890" 或 "socks5://127.0.0.1:1080"
+    proxy: Optional[str] = None
     
     def get_repo_configs(self) -> List[RepoConfig]:
         """获取规范化的仓库配置列表。"""
@@ -142,6 +146,20 @@ class Config(BaseModel):
         """验证检查间隔"""
         if v < 60:
             raise ValueError("检查间隔不能少于60秒")
+        return v
+
+    @validator('proxy')
+    def validate_proxy(cls, v: Optional[str]) -> Optional[str]:
+        """验证代理配置格式。"""
+
+        if not v:
+            return None
+
+        valid_schemes = ("http://", "https://", "socks5://", "socks4://")
+        if not v.startswith(valid_schemes):
+            raise ValueError(
+                f"代理配置格式错误: {v}，应为 http://host:port 或 socks5://host:port 格式"
+            )
         return v
     
     @classmethod

@@ -63,7 +63,8 @@ python main.py init-config
   "openai_model": "gpt-3.5-turbo",
   "qq_bot_url": "http://127.0.0.1:5700",
   "qq_group_id": "123456789",
-  "database_path": "data.db"
+  "database_path": "data.db",
+  "proxy": null
 }
 ```
 
@@ -119,6 +120,34 @@ python main.py --version
 | `openai_model` | 使用的模型 | `gpt-3.5-turbo` |
 | `qq_bot_url` | QQ机器人API地址 | `http://127.0.0.1:5700` |
 | `qq_group_id` | 目标QQ群号 | `123456789` |
+| `proxy` | 代理服务器地址，用于加速GitHub下载，支持http/https/socks5 | `null` |
+
+### 代理配置
+
+`proxy` 用于配置代理服务器加速GitHub API和下载请求，支持以下协议：
+
+| 协议 | 示例 | 说明 |
+|------|------|------|
+| HTTP | `http://127.0.0.1:7890` | HTTP代理 |
+| HTTPS | `https://127.0.0.1:7890` | HTTPS代理 |
+| SOCKS5 | `socks5://127.0.0.1:1080` | SOCKS5代理（需安装 `aiohttp-socks`） |
+| SOCKS4 | `socks4://127.0.0.1:1080` | SOCKS4代理（需安装 `aiohttp-socks`） |
+
+设置为 `null` 则不使用代理。SOCKS代理需要额外安装依赖：
+
+```bash
+pip install aiohttp-socks
+```
+
+示例配置：
+
+```json
+{
+  "proxy": "http://127.0.0.1:7890"
+}
+```
+
+代理仅作用于GitHub API请求和构建产物/Release资源下载，不影响QQ机器人通信。
 
 ### Release监视配置
 

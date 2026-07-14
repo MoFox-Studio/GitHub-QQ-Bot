@@ -7,11 +7,18 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 from loguru import logger
 
+try:
+    from aiohttp_socks import ProxyConnector as SocksProxyConnector
+    _AIOHTTP_SOCKS_AVAILABLE = True
+except ImportError:
+    SocksProxyConnector = None
+    _AIOHTTP_SOCKS_AVAILABLE = False
+
 
 class GitHubMonitor:
     """GitHub仓库监控器"""
     
-    def __init__(self, token: str):
+    def __init__(self, token: str, proxy: Optional[str] = None):
         self.token = token
         self.base_url = "https://api.github.com"
         self.headers = {
@@ -19,6 +26,34 @@ class GitHubMonitor:
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "GitHub-QQ-Bot/1.0"
         }
+        self.proxy = proxy
+        if proxy:
+            if proxy.startswith("socks") and not _AIOHTTP_SOCKS_AVAILABLE:
+                logger.warning(
+                    f"配置了SOCKS代理 {proxy}，但未安装 aiohttp-socks 包，"
+                    "SOCKS代理将不可用。请运行: pip install aiohttp-socks"
+                )
+            else:
+                logger.info(f"已启用代理下载加速: {proxy}")
+
+    def _create_session(self) -> aiohttp.ClientSession:
+        """创建aiohttp会话，根据代理类型使用合适的连接器。
+
+        - http/https 代理：使用aiohttp原生proxy参数（在请求时传入）
+        - socks4/socks5 代理：使用aiohttp-socks的ProxyConnector
+        """
+
+        if self.proxy and self.proxy.startswith("socks") and _AIOHTTP_SOCKS_AVAILABLE:
+            connector = SocksProxyConnector.from_url(self.proxy)
+            return aiohttp.ClientSession(connector=connector)
+        return aiohttp.ClientSession()
+
+    def _request_kwargs(self) -> Dict[str, Any]:
+        """返回请求级别的代理参数（仅对http/https代理生效）。"""
+
+        if self.proxy and not self.proxy.startswith("socks"):
+            return {"proxy": self.proxy}
+        return {}
     
     async def get_new_commits(self, repo: str, since: Optional[datetime] = None, last_commit_sha: Optional[str] = None, branches: Optional[List[str]] = None) -> List[Dict]:
         """获取指定时间之后的新提交
@@ -73,9 +108,9 @@ class GitHubMonitor:
             branch_info = f"分支 {branch}" if branch else "所有分支"
             logger.info(f"获取 {repo} {branch_info} 自 {params['since']} 以来的提交")
         
-        async with aiohttp.ClientSession() as session:
+        async with self._create_session() as session:
             try:
-                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
+                async with session.get(url, headers=self.headers, params=params, ssl=False, **self._request_kwargs()) as response:
                     if response.status == 200:
                         commits_data = await response.json()
                         branch_info = f"分支 {branch}" if branch else "所有分支"
@@ -126,7 +161,7 @@ class GitHubMonitor:
         url = f"{self.base_url}/repos/{repo}/commits/{commit_sha}"
         
         try:
-            async with session.get(url, headers=self.headers, ssl=False) as response:
+            async with session.get(url, headers=self.headers, ssl=False, **self._request_kwargs()) as response:
                 if response.status == 200:
                     commit_data = await response.json()
                     return self._format_commit(commit_data)
@@ -149,9 +184,9 @@ class GitHubMonitor:
         url = f"{self.base_url}/repos/{repo}/releases"
         params: Dict[str, Any] = {"per_page": 10}
 
-        async with aiohttp.ClientSession() as session:
+        async with self._create_session() as session:
             try:
-                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
+                async with session.get(url, headers=self.headers, params=params, ssl=False, **self._request_kwargs()) as response:
                     if response.status == 200:
                         releases_data = await response.json()
                         for release_data in releases_data:
@@ -213,8 +248,8 @@ class GitHubMonitor:
         """
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(download_url, headers=self.headers, ssl=False) as response:
+            async with self._create_session() as session:
+                async with session.get(download_url, headers=self.headers, ssl=False, **self._request_kwargs()) as response:
                     if response.status != 200:
                         error_msg = await response.text()
                         logger.error(f"下载Release资源失败: {response.status}, 响应: {error_msg}")
@@ -257,9 +292,9 @@ class GitHubMonitor:
         if not include_in_progress:
             params["status"] = "completed"
 
-        async with aiohttp.ClientSession() as session:
+        async with self._create_session() as session:
             try:
-                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
+                async with session.get(url, headers=self.headers, params=params, ssl=False, **self._request_kwargs()) as response:
                     if response.status == 200:
                         data = await response.json()
                         runs = data.get("workflow_runs", [])
@@ -338,9 +373,9 @@ class GitHubMonitor:
 
         url = f"{self.base_url}/repos/{repo}/actions/runs/{run_id}/artifacts"
 
-        async with aiohttp.ClientSession() as session:
+        async with self._create_session() as session:
             try:
-                async with session.get(url, headers=self.headers, ssl=False) as response:
+                async with session.get(url, headers=self.headers, ssl=False, **self._request_kwargs()) as response:
                     if response.status == 200:
                         data = await response.json()
                         artifacts = data.get("artifacts", [])
@@ -385,8 +420,8 @@ class GitHubMonitor:
         url = f"{self.base_url}/repos/{repo}/actions/artifacts/{artifact_id}/zip"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.headers, ssl=False) as response:
+            async with self._create_session() as session:
+                async with session.get(url, headers=self.headers, ssl=False, **self._request_kwargs()) as response:
                     if response.status != 200:
                         error_msg = await response.text()
                         logger.error(f"下载构建产物失败: {response.status}, 响应: {error_msg}")
@@ -416,9 +451,9 @@ class GitHubMonitor:
         if branch:
             params["sha"] = branch
         
-        async with aiohttp.ClientSession() as session:
+        async with self._create_session() as session:
             try:
-                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
+                async with session.get(url, headers=self.headers, params=params, ssl=False, **self._request_kwargs()) as response:
                     if response.status == 200:
                         commits_data = await response.json()
                         

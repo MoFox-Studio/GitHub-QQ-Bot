@@ -41,7 +41,7 @@ def run(config):
         
         # 初始化组件
         db = Database(config_obj.database_path)
-        github_monitor = GitHubMonitor(config_obj.github_token)
+        github_monitor = GitHubMonitor(config_obj.github_token, proxy=config_obj.proxy)
         ai_summarizer = AISummarizer(
             config_obj.openai_api_key, 
             config_obj.openai_base_url,
@@ -438,6 +438,7 @@ def init_config(config):
         "qq_bot_url": "http://127.0.0.1:5700",
         "qq_group_id": "",
         "database_path": "data.db",
+        "proxy": None,
         "release_monitors": {
             "owner/repo": {
                 "asset_files": ["example-.*\\.zip"],
@@ -473,7 +474,7 @@ def test(repo, config):
         config_obj = Config.from_file(config)
         
         # 初始化组件
-        github_monitor = GitHubMonitor(config_obj.github_token)
+        github_monitor = GitHubMonitor(config_obj.github_token, proxy=config_obj.proxy)
         ai_summarizer = AISummarizer(
             config_obj.openai_api_key, 
             config_obj.openai_base_url,

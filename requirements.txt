@@ -7,3 +7,4 @@ loguru
 click
 pydantic
 aiohttp
+aiohttp-socks
