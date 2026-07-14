@@ -41,6 +41,17 @@ class Database:
                         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ci_checks (
+                        repo TEXT PRIMARY KEY,
+                        last_run_id TEXT,
+                        last_run_workflow TEXT,
+                        last_run_branch TEXT,
+                        last_run_head_sha TEXT,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
                 conn.commit()
                 logger.info(f"数据库初始化完成: {self.db_path}")
         except Exception as e:
@@ -171,3 +182,39 @@ class Database:
                 logger.info(f"更新仓库 {repo} Release状态 - ID: {release_id}, Tag: {release_tag}")
         except Exception as e:
             logger.error(f"更新最后Release状态失败: {e}")
+
+    def get_last_ci_run_id(self, repo: str) -> Optional[str]:
+        """获取最后已处理的CI运行ID。"""
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT last_run_id FROM ci_checks WHERE repo = ?",
+                    (repo,)
+                )
+                result = cursor.fetchone()
+                run_id = result[0] if result and result[0] else None
+                logger.info(f"获取到仓库 {repo} 的最后CI运行ID: {run_id}")
+                return run_id
+        except Exception as e:
+            logger.error(f"获取最后CI运行ID失败: {e}")
+            return None
+
+    def update_last_ci_run(self, repo: str, run_id: str, workflow: str, branch: str, head_sha: str) -> None:
+        """更新仓库最后已处理的CI运行状态。"""
+
+        try:
+            current_time = datetime.now(timezone.utc).isoformat()
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO ci_checks
+                    (repo, last_run_id, last_run_workflow, last_run_branch, last_run_head_sha, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?,
+                        COALESCE((SELECT created_at FROM ci_checks WHERE repo = ?), ?),
+                        ?
+                    )
+                """, (repo, run_id, workflow, branch, head_sha, repo, current_time, current_time))
+                conn.commit()
+                logger.info(f"更新仓库 {repo} CI运行状态 - ID: {run_id}, Workflow: {workflow}, Branch: {branch}")
+        except Exception as e:
+            logger.error(f"更新最后CI运行状态失败: {e}")

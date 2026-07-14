@@ -31,12 +31,28 @@ class ReleaseMonitorConfig(BaseModel):
     group_file_folder_name: Optional[str] = None
 
 
+class CIMonitorConfig(BaseModel):
+    """CI构建产物监视配置类。"""
+
+    # 要下载的artifact名称列表，支持精确匹配或正则表达式
+    artifact_files: List[str] = Field(default_factory=list)
+    # 监控的工作流文件名（如 "build.yml"），留空表示监控所有工作流
+    workflow: Optional[str] = None
+    # 监控的分支名称，留空表示监控默认分支
+    branch: Optional[str] = None
+    # 是否包含未完成（in_progress）的运行，默认只监控已完成的运行
+    include_in_progress: bool = False
+    # 上传到QQ群文件的文件夹名称，留空则上传到群文件根目录
+    group_file_folder_name: Optional[str] = None
+
+
 class Config(BaseModel):
     """配置类"""
     
     github_token: str
     github_repos: List[Union[str, Dict[str, Any]]]  # 支持字符串或字典格式
     release_monitors: Dict[str, ReleaseMonitorConfig] = Field(default_factory=dict)
+    ci_monitors: Dict[str, CIMonitorConfig] = Field(default_factory=dict)
     check_interval: int = 300  # 默认5分钟
     
     openai_api_key: str
@@ -77,6 +93,11 @@ class Config(BaseModel):
         """获取启用状态的Release监视配置字典。"""
 
         return dict(self.release_monitors)
+
+    def get_ci_monitor_configs(self) -> Dict[str, CIMonitorConfig]:
+        """获取启用状态的CI监视配置字典。"""
+
+        return dict(self.ci_monitors)
     
     @validator('github_repos')
     def validate_repos(cls, v: List[Union[str, Dict[str, Any]]]) -> List[Union[str, Dict[str, Any]]]:
@@ -105,6 +126,15 @@ class Config(BaseModel):
         for repo in v:
             if '/' not in repo:
                 raise ValueError(f"Release监视仓库格式错误: {repo}，应为 owner/repo 格式")
+        return v
+
+    @validator('ci_monitors')
+    def validate_ci_monitors(cls, v: Dict[str, CIMonitorConfig]) -> Dict[str, CIMonitorConfig]:
+        """验证CI监视仓库格式。"""
+
+        for repo in v:
+            if '/' not in repo:
+                raise ValueError(f"CI监视仓库格式错误: {repo}，应为 owner/repo 格式")
         return v
 
     @validator('check_interval')

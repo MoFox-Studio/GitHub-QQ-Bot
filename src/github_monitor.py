@@ -230,6 +230,178 @@ class GitHubMonitor:
             logger.error(f"下载Release资源时出错: {e}")
             return False
 
+    async def get_latest_workflow_run(self, repo: str, workflow: Optional[str] = None,
+                                       branch: Optional[str] = None,
+                                       include_in_progress: bool = False) -> Optional[Dict]:
+        """获取仓库最新的已完成Workflow运行。
+
+        Args:
+            repo: 仓库名称 (owner/repo)
+            workflow: 工作流文件名（如 "build.yml"），None表示所有工作流
+            branch: 分支名称，None表示默认分支
+            include_in_progress: 是否包含未完成的运行
+
+        Returns:
+            格式化后的Workflow运行信息，没有新运行时返回None
+        """
+
+        url = f"{self.base_url}/repos/{repo}/actions/runs"
+        params: Dict[str, Any] = {"per_page": 30}
+
+        if workflow:
+            params["event"] = None  # 不按事件过滤
+        if branch:
+            params["branch"] = branch
+
+        # 只查询已完成的运行，除非显式要求包含进行中的
+        if not include_in_progress:
+            params["status"] = "completed"
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, headers=self.headers, params=params, ssl=False) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        runs = data.get("workflow_runs", [])
+                        if not runs:
+                            logger.info(f"仓库 {repo} 没有可通知的Workflow运行")
+                            return None
+
+                        for run in runs:
+                            # 按工作流文件名过滤
+                            if workflow:
+                                run_workflow = run.get("path", "") or run.get("name", "")
+                                if workflow not in run_workflow and not run_workflow.endswith(workflow):
+                                    continue
+
+                            # 按完成状态过滤
+                            if not include_in_progress and run.get("status") != "completed":
+                                continue
+
+                            return self._format_workflow_run(run)
+
+                        logger.info(f"仓库 {repo} 没有匹配的Workflow运行")
+                        return None
+                    if response.status == 404:
+                        logger.error(f"仓库不存在或无权限访问Workflow: {repo}")
+                        return None
+
+                    error_msg = await response.text()
+                    logger.error(f"获取Workflow运行失败: {response.status}, 响应: {error_msg}")
+                    return None
+            except aiohttp.ClientError as e:
+                logger.error(f"网络请求GitHub Actions API时出错: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"请求GitHub Actions API时出错: {e}")
+                return None
+
+    def _format_workflow_run(self, run_data: Dict) -> Dict:
+        """格式化单个Workflow运行数据。"""
+
+        created_at = run_data.get("created_at")
+        parsed_created = None
+        if created_at:
+            parsed_created = datetime.fromisoformat(created_at.replace('Z', '+00:00')).isoformat()
+
+        updated_at = run_data.get("updated_at")
+        parsed_updated = None
+        if updated_at:
+            parsed_updated = datetime.fromisoformat(updated_at.replace('Z', '+00:00')).isoformat()
+
+        return {
+            "id": run_data["id"],
+            "run_id": str(run_data["id"]),
+            "name": run_data.get("name", ""),
+            "workflow_id": run_data.get("workflow_id"),
+            "path": run_data.get("path", ""),
+            "head_branch": run_data.get("head_branch", ""),
+            "head_sha": run_data.get("head_sha", ""),
+            "status": run_data.get("status", ""),
+            "conclusion": run_data.get("conclusion", ""),
+            "url": run_data.get("html_url", ""),
+            "created_at": parsed_created,
+            "updated_at": parsed_updated,
+            "artifacts_url": run_data.get("artifacts_url", ""),
+        }
+
+    async def get_workflow_run_artifacts(self, repo: str, run_id: int) -> List[Dict]:
+        """获取指定Workflow运行的构建产物列表。
+
+        Args:
+            repo: 仓库名称 (owner/repo)
+            run_id: Workflow运行ID
+
+        Returns:
+            构建产物信息列表
+        """
+
+        url = f"{self.base_url}/repos/{repo}/actions/runs/{run_id}/artifacts"
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, headers=self.headers, ssl=False) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        artifacts = data.get("artifacts", [])
+                        logger.info(f"获取到Workflow运行 {run_id} 的 {len(artifacts)} 个构建产物")
+                        return [
+                            {
+                                "name": artifact.get("name", ""),
+                                "id": artifact.get("id"),
+                                "size_in_bytes": artifact.get("size_in_bytes", 0),
+                                "url": artifact.get("url", ""),
+                                "archive_download_url": artifact.get("archive_download_url", ""),
+                                "expired": artifact.get("expired", False),
+                            }
+                            for artifact in artifacts
+                        ]
+                    if response.status == 404:
+                        logger.error(f"Workflow运行不存在或无权限访问: {repo} run_id={run_id}")
+                        return []
+
+                    error_msg = await response.text()
+                    logger.error(f"获取构建产物失败: {response.status}, 响应: {error_msg}")
+                    return []
+            except aiohttp.ClientError as e:
+                logger.error(f"网络请求构建产物API时出错: {e}")
+                return []
+            except Exception as e:
+                logger.error(f"请求构建产物API时出错: {e}")
+                return []
+
+    async def download_artifact(self, repo: str, artifact_id: int, target_path: Any) -> bool:
+        """下载CI构建产物（zip格式）到本地路径。
+
+        Args:
+            repo: 仓库名称 (owner/repo)
+            artifact_id: 构建产物ID
+            target_path: 本地保存路径
+
+        Returns:
+            下载是否成功
+        """
+
+        url = f"{self.base_url}/repos/{repo}/actions/artifacts/{artifact_id}/zip"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers, ssl=False) as response:
+                    if response.status != 200:
+                        error_msg = await response.text()
+                        logger.error(f"下载构建产物失败: {response.status}, 响应: {error_msg}")
+                        return False
+
+                    with open(target_path, "wb") as file:
+                        async for chunk in response.content.iter_chunked(1024 * 1024):
+                            logger.info(f"正在下载构建产物: {target_path}，已下载 {file.tell() / (1024 * 1024):.2f} MB")
+                            file.write(chunk)
+                    logger.info(f"构建产物下载完成: {target_path}")
+                    return True
+        except Exception as e:
+            logger.error(f"下载构建产物时出错: {e}")
+            return False
+
     async def get_recent_commits(self, repo: str, limit: int = 5, branch: Optional[str] = None) -> List[Dict]:
         """获取最近的提交（用于测试）
         

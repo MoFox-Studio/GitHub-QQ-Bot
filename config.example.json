@@ -25,6 +25,19 @@
       "asset_files": ["plugin-v[0-9]+\\.[0-9]+\\.[0-9]+\\.zip"]
     }
   },
+  "ci_monitors": {
+    "owner/repo1": {
+      "artifact_files": ["app-debug", "test-report"],
+      "workflow": "build.yml",
+      "branch": "main",
+      "include_in_progress": false,
+      "group_file_folder_name": "CI"
+    },
+    "owner/repo2": {
+      "artifact_files": ["build-.*"],
+      "group_file_folder_name": "CI"
+    }
+  },
   "check_interval": 300,
   "openai_api_key": "sk-your_openai_api_key_here",
   "openai_base_url": "https://api.openai.com/v1",

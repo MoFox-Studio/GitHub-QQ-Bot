@@ -6,6 +6,7 @@
 
 - 🔍 **智能监控**：定时检查指定GitHub仓库的新提交
 - 🚀 **Release通知**：监视指定仓库Release，发送Release Note和指定资源文件到QQ群
+- 🏗️ **CI构建产物下载**：监视GitHub Actions工作流运行，下载构建产物（artifacts）并发送到QQ群
 - 🤖 **AI总结**：使用大模型（OpenAI/Claude等）智能总结提交内容
 - 📱 **QQ集成**：自动发送总结到指定QQ群
 - 💾 **状态管理**：SQLite数据库记录检查状态，避免重复通知
@@ -111,6 +112,7 @@ python main.py --version
 | `github_token` | GitHub Personal Access Token | `ghp_xxxxx` |
 | `github_repos` | 要监控提交的仓库列表 | `["owner/repo1", "owner/repo2"]` |
 | `release_monitors` | Release监视字典，键为 `owner/repo`，值为监视配置 | `{ "owner/repo1": { "asset_files": ["app.zip"] } }` |
+| `ci_monitors` | CI构建产物监视字典，键为 `owner/repo`，值为监视配置 | `{ "owner/repo1": { "artifact_files": ["build.zip"] } }` |
 | `check_interval` | 检查间隔（秒） | `300` (5分钟) |
 | `openai_api_key` | OpenAI API密钥 | `sk-xxxxx` |
 | `openai_base_url` | API基础URL | `https://api.openai.com/v1` |
@@ -143,6 +145,38 @@ python main.py --version
 `asset_files` 中的每一项会先按完整文件名精确匹配，找不到时再按正则表达式完整匹配文件名。匹配一段可变文字可以使用 `.*`，例如 `app-release-.*\.apk` 可以匹配 `app-release-v1.2.3.apk`；匹配版本号可以使用 `[0-9]+\.[0-9]+\.[0-9]+`，例如 `plugin-v[0-9]+\.[0-9]+\.[0-9]+\.zip` 可以匹配 `plugin-v1.2.3.zip`。因为配置文件是 JSON，正则里的反斜杠需要写成双反斜杠，例如正则 `\.apk` 在 JSON 中写作 `\\.apk`。
 
 Release通知目标QQ群固定使用全局 `qq_group_id`。程序会记录每个仓库最后成功发送的Release ID，只有Release Note和配置的资源文件都发送成功后才更新状态，避免漏发。
+
+### CI构建产物监视配置
+
+`ci_monitors` 是一个按仓库名索引的字典；仓库出现在该字典中即表示启用CI构建产物监视。每个仓库支持以下字段：
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `artifact_files` | 要从CI运行下载并发送到QQ群的构建产物名称或正则表达式列表 | `[]` |
+| `workflow` | 监控的工作流文件名（如 `build.yml`），留空表示监控所有工作流 | `null` |
+| `branch` | 监控的分支名称，留空表示默认分支 | `null` |
+| `include_in_progress` | 是否包含未完成（in_progress）的运行，默认只监控已完成的运行 | `false` |
+| `group_file_folder_name` | 上传到QQ群文件的文件夹名称，留空则上传到群文件根目录 | `null` |
+
+示例：
+
+```json
+{
+  "ci_monitors": {
+    "owner/repo": {
+      "artifact_files": ["app-debug", "test-report"],
+      "workflow": "build.yml",
+      "branch": "main",
+      "include_in_progress": false,
+      "group_file_folder_name": "CI"
+    }
+  }
+}
+```
+
+`artifact_files` 的匹配规则与 `release_monitors.asset_files` 一致：先按完整名称精确匹配，找不到时再按正则表达式完整匹配。构建产物会以 `{artifact_name}.zip` 的形式下载并上传到QQ群文件。
+
+CI构建产物通知目标QQ群固定使用全局 `qq_group_id`。程序会记录每个仓库最后成功处理的Workflow运行ID，只有构建产物和通知消息都发送成功后才更新状态，避免漏发。
 
 ## API Token获取
 
@@ -222,6 +256,7 @@ CMD ["python", "main.py", "run"]
 ### 日志查看
 
 程序会输出详细的运行日志，包括：
+
 - 检查状态
 - API调用结果
 - 错误信息
@@ -237,8 +272,9 @@ MIT License
 ## 更新日志
 
 ### v1.0.0
+
 - 初始版本
 - 基本监控功能
 - AI总结集成
 - QQ机器人支持
-- Release Note和Release资源文件QQ群通知支持 
+- Release Note和Release资源文件QQ群通知支持
